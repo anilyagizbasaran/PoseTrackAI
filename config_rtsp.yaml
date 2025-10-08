@@ -6,7 +6,7 @@ camera:
   # RTSP URL format: "rtsp://username:password@ip:port/stream"
   source: "rtsp://username:password@ip:port/stream"  # Change this to your camera URL
   resolution: [1280, 720]       # Higher resolution for RTSP
-  buffer_size: 3               # Larger buffer for RTSP
+  buffer_size: 10              # Buyuk buffer - frame kaybini onler, akicilik icin
   
 # YOLO Model Settings
 yolo:
@@ -43,7 +43,7 @@ tracking:
   
 # Performance Settings
 performance:
-  track_every_n_frames: 2       # Process every N frames (2-3 recommended for RTSP to reduce network load)
+  track_every_n_frames: 1       # Her frame'i isle - maksimum akicilik (gecikme onemli degil)
   
 # UI Settings
 ui:

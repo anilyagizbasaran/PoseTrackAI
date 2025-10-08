@@ -37,9 +37,9 @@ class RTSPCamera:
             # Special settings for RTSP - FFMPEG backend required
             self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
             
-            # Aggressive buffer and timeout settings (for low latency)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # Minimum buffer (1 too low, 3 ideal)
-            self.cap.set(cv2.CAP_PROP_FPS, 25)  # FPS limit
+            # AKICILIK için ayarlar
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimum buffer - eski frame'leri atla
+            # FPS limitini KALDIRDIK - kameranın native FPS'ini kullansın
             
             if not self.cap.isOpened():
                 log_with_timestamp(f"Could not connect to RTSP camera!", "ERROR")
@@ -76,9 +76,12 @@ class RTSPCamera:
         
         return True
     
-    def read_frame(self):
+    def read_frame(self, skip_buffered=True):
         """
         Read frame from camera
+        
+        Args:
+            skip_buffered: Eski buffer'daki frame'leri atla, en güncel frame'i al (akıcılık için)
         
         Returns:
             success: Was frame read successfully?
@@ -88,7 +91,13 @@ class RTSPCamera:
             return False, None
         
         try:
-            # Read frame
+            # AKICILIK İÇİN: Buffer'daki eski frame'leri atla, en güncel frame'i al
+            if skip_buffered:
+                # Eski frame'leri temizle - sadece en son frame'i oku
+                for _ in range(3):  # Buffer'daki eski frame'leri atla
+                    self.cap.grab()
+            
+            # En güncel frame'i oku
             success, frame = self.cap.read()
             
             # Frame validation
