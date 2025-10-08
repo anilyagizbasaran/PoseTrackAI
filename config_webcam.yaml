@@ -1,0 +1,54 @@
+# 🚀 OpenCV YOLO Pose Detection - Configuration File
+# Only parameters that are actually used
+
+# 📹 Camera Settings
+camera:
+  source: 0                    # 0: Webcam, "rtsp://..." : RTSP stream, "video.mp4" : Video file
+  resolution: [640, 480]       # [width, height] - Low resolution for webcam optimization
+  buffer_size: 3               # Camera buffer size - for stability
+  
+# 🎯 YOLO Model Settings
+yolo:
+  model_path: "yolo11n-pose.pt"  # Model file path
+  device: "auto"                 # "auto", "cpu", "cuda" - automatic GPU detection
+  
+# 🏃 Tracking Settings
+tracking:
+  # TrackManager Parameters
+  max_history_length: 30       # Track history length
+  
+  # Norfair Parameters
+  use_norfair: true            # Use Norfair tracker
+  distance_function: "keypoint"  # "keypoint" - OKS based distance
+  distance_threshold: 0.8       # Matching threshold
+  hit_counter_max: 60           # Track max age (60 frames = 2 seconds)
+  initialization_delay: 2       # False positive filter
+  pointwise_hit_counter_max: 4  # Keypoint hit counter
+  
+  # ReID Parameters
+  use_reid: true               # ReID active/inactive
+  reid_distance_threshold: 0.5  # ReID matching threshold (more flexible)
+  reid_hit_counter_max: 150     # Max age with ReID (150 frames = 5 seconds)
+  keypoint_weight: 0.4          # Keypoint weight (40%)
+  reid_weight: 0.6              # ReID weight (60%) - more appearance focused
+  
+  # Persistent Database
+  use_persistent_reid: true     # Persistent database active
+  persistent_db_path: "person_database.json"  # Database file
+  persistent_db_type: "json"    # "json" or "sqlite"
+  persistent_similarity_threshold: 0.65  # Matching threshold (very flexible - for certain person recognition)
+  max_persons: 1000            # Maximum person count
+  auto_save: true               # Auto save
+  
+# ⚡ Performance Settings
+performance:
+  track_every_n_frames: 1       # Tracking every N frames (for ID consistency)
+  
+# 🎨 UI Settings
+ui:
+  window_name: "YOLO11 Pose Detection"  # Window name
+  
+# 📊 Logging Settings
+logging:
+  log_to_file: true            # Write logs to file
+  log_file: "logs/yolo_detection.log"  # Log file
