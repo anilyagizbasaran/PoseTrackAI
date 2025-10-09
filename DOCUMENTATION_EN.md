@@ -10,8 +10,13 @@ Advanced pose detection and tracking system with persistent person recognition.
 opencv_yolo/
 ├── pose_ultralytics.py      # Main webcam detection script
 ├── pose_rtsp.py             # RTSP camera detection script
-├── tracking.py              # Advanced tracking with Norfair + ReID
-├── person_database.py       # Persistent person database (JSON/SQLite)
+├── tracking/                # Modular tracking system
+│   ├── __init__.py          # Module exports
+│   ├── skeletal_biometrics.py  # Bone structure matching
+│   ├── reid_extractor.py    # ReID embeddings (ResNet50)
+│   └── track_manager.py     # Main tracking logic
+├── tracking.py              # Backward compatibility wrapper
+├── person_database.py       # Persistent person database (JSON)
 ├── pose_utils.py            # Pose calculation and drawing utilities
 ├── ui.py                    # UI overlay and visualization
 ├── log.py                   # Logging system
@@ -31,8 +36,12 @@ opencv_yolo/
 - **pose_rtsp.py** - RTSP camera pose detection with tracking
 
 ### Core Modules
-- **tracking.py** - Track management with Norfair, ReID, and persistent database
-- **person_database.py** - Stores person embeddings permanently for recognition
+- **tracking/** - Modular tracking system
+  - **skeletal_biometrics.py** - Bone length/ratio extraction (clothing-independent)
+  - **reid_extractor.py** - ResNet50 appearance-based embeddings
+  - **track_manager.py** - Norfair + ReID + Persistent database management
+- **tracking.py** - Backward compatibility wrapper (old imports still work)
+- **person_database.py** - Stores person embeddings permanently in JSON
 - **pose_utils.py** - Pose keypoint calculations and skeleton drawing
 - **ui.py** - On-screen information display
 
@@ -190,6 +199,45 @@ camera:
 3. **Backup Database**: Export `person_database.json` regularly
 4. **Test Configs**: Try different parameters for your use case
 5. **GPU Usage**: Always use GPU if available (`device: "cuda"`)
+
+---
+
+## Advanced Features
+
+### Persistent ID System
+- Same person gets same ID even after closing and reopening the program
+- Works across multiple sessions and days
+- Threshold: `0.70` (optimal - recognizes same people, distinguishes different ones)
+
+### Occlusion Support
+- Tracks people even when they overlap or are partially hidden
+- 10-second tracking resilience (`hit_counter_max: 300`)
+- 15-second ReID active (`reid_hit_counter_max: 450`)
+- Works with close proximity tracking
+
+### Skeletal Biometrics
+- Uses bone structure for identification (clothing-independent)
+- More stable than appearance in occlusions
+- Minimum 8 keypoints required for quality detection
+- Minimum 10 measurements for high-quality skeletal matching
+
+---
+
+## Troubleshooting
+
+**IDs changing when closing/opening:**
+- Lower threshold: `persistent_similarity_threshold: 0.65`
+
+**IDs flickering/unstable:**
+- Already optimized with `initialization_delay: 5`
+
+**False matches (different people same ID):**
+- Increase threshold: `persistent_similarity_threshold: 0.75`
+- Increase quality: `min_visible_keypoints: 10`
+
+**People not detected far away:**
+- Lower `conf_threshold: 0.15` in detection settings
+- Lower `min_visible_keypoints: 5` for distant detection
 
 ---
 

@@ -10,14 +10,13 @@ import time
 import torch
 from log import (log_with_timestamp, log_frame_info, log_detection_results, 
                  log_system_start, log_system_stats)
-from pose_utils import calculate_head_pose, draw_head_pose, draw_pose_skeleton
-from tracking import TrackManager, extract_boxes_from_results
-from ui import draw_info_overlay, draw_no_person_message, draw_track_id_on_head, create_info_data
+from pose_utils import calculate_head_pose, draw_head_pose, draw_pose_skeleton, draw_shoulder_measurement
+from tracking import TrackManager, extract_skeletal_features
+from ui import draw_info_overlay, draw_no_person_message, draw_track_id_on_head, create_info_data, draw_skeletal_info
 from camera_rtsp import RTSPCamera
 from config_manager import get_config
 
-# Global counters for tracking
-total_person_count = 0
+# (Removed unused global counter)
 
 
 def handle_keyboard_input(window_name):
@@ -83,15 +82,17 @@ def main():
                 use_reid=tracking_config.get('use_reid', True),
                 reid_distance_threshold=tracking_config.get('reid_distance_threshold', 0.3),
                 reid_hit_counter_max=tracking_config.get('reid_hit_counter_max', 150),
-                keypoint_weight=tracking_config.get('keypoint_weight', 0.6),
-                reid_weight=tracking_config.get('reid_weight', 0.4),
+                keypoint_weight=tracking_config.get('keypoint_weight', 0.1),
+                reid_weight=tracking_config.get('reid_weight', 0.2),
+                skeletal_weight=tracking_config.get('skeletal_weight', 0.7),
+                use_skeletal=tracking_config.get('use_skeletal', True),
                 # Persistent Database - SAME DATABASE!
                 use_persistent_reid=tracking_config.get('use_persistent_reid', True),
                 persistent_db_path=tracking_config.get('persistent_db_path', 'person_database.json'),
                 persistent_db_type=tracking_config.get('persistent_db_type', 'json'),
                 persistent_similarity_threshold=tracking_config.get('persistent_similarity_threshold', 0.65)
             )
-            print("NORFAIR + ReID + DATABASE ACTIVE!")
+            print("NORFAIR + ReID + SKELETAL + DATABASE ACTIVE!")
         except Exception as e:
             print(f"WARNING: Failed to initialize Norfair: {e}")
             print("WARNING: Switching to YOLO ByteTrack...")
@@ -109,8 +110,20 @@ def main():
     
     # Frame skip - Get from config
     performance_config = config.get_performance_config()
+    detection_config = config.get_detection_config()
+    rtsp_config = config.get_rtsp_config()
+    
     PROCESS_EVERY_N_FRAMES = performance_config.get('track_every_n_frames', 1)
     last_annotated_frame = None
+    
+    # Get detection parameters from config
+    conf_threshold = detection_config.get('conf_threshold', 0.25)
+    iou_threshold = detection_config.get('iou_threshold', 0.4)
+    keypoint_confidence = detection_config.get('keypoint_confidence', 0.3)
+    show_numbers = detection_config.get('show_keypoint_numbers', True)
+    
+    # RTSP settings
+    MAX_CONSECUTIVE_FAILURES = rtsp_config.get('max_consecutive_failures', 15)
     
     # RTSP Camera settings - Get from config
     camera_config = config.get_camera_config()
@@ -187,7 +200,6 @@ def main():
     cv2.resizeWindow(window_name, 800, 600)
     
     consecutive_failures = 0
-    MAX_CONSECUTIVE_FAILURES = 15  # Reconnect after 15 failed frames
     
     while True:
         frame_start_time = time.time()
@@ -237,7 +249,7 @@ def main():
                 frame, 
                 save=False, 
                 show=False, 
-                conf=0.25,
+                conf=conf_threshold,
                 verbose=False, 
                 device=device, 
                 half=False
@@ -249,8 +261,8 @@ def main():
                 persist=True,
                 save=False, 
                 show=False, 
-                conf=0.5,
-                iou=0.4,
+                conf=conf_threshold,
+                iou=iou_threshold,
                 verbose=False, 
                 device=device, 
                 half=False,
@@ -281,24 +293,23 @@ def main():
                     height = y2 - y1
                     boxes.append([x_center, y_center, width, height])
             
-            # Tracking (Norfair or YOLO)
+            # Tracking (Norfair)
             if USE_NORFAIR and len(pose_keypoints) > 0 and len(boxes) > 0:
                 # Norfair + ReID tracking
                 track_ids, finished_tracks = track_manager.update_tracks_with_norfair(
                     pose_keypoints, boxes, frame=frame
                 )
-            elif not USE_NORFAIR:
-                # YOLO tracking
-                track_ids, boxes = extract_boxes_from_results(pose_results)
         
         # Pose processing
         if pose_keypoints is not None and len(pose_keypoints) > 0:
             annotated_frame = draw_pose_skeleton(annotated_frame, pose_keypoints, 
-                                                confidence_threshold=0.3, show_numbers=True)
+                                                confidence_threshold=keypoint_confidence, 
+                                                show_numbers=show_numbers)
             
             total_keypoints = 0
             visible_keypoints = 0
             head_pose_data = []
+            skeletal_data = []  # Skeletal biometrics data
             
             # Track ID logging
             if track_ids and frame_count % 30 == 0:
@@ -307,6 +318,16 @@ def main():
             for person_idx, keypoints in enumerate(pose_keypoints):
                 track_id = track_ids[person_idx] if person_idx < len(track_ids) else None
                 
+                # Skeletal features'ı hesapla
+                skeletal_features = extract_skeletal_features(keypoints)
+                if skeletal_features is not None:
+                    visible_skeletal = int(np.sum(skeletal_features > 0.001))
+                    skeletal_data.append({
+                        'person_id': track_id if track_id else f"#{person_idx}",
+                        'skeletal_features': skeletal_features,
+                        'visible_count': visible_skeletal
+                    })
+                
                 # Calculate head pose
                 result = calculate_head_pose(keypoints)
                 
@@ -314,6 +335,9 @@ def main():
                     yaw, pitch, roll, head_center = result
                     annotated_frame = draw_head_pose(annotated_frame, yaw, pitch, roll, head_center)
                     annotated_frame = draw_track_id_on_head(annotated_frame, head_center, track_id)
+                    
+                    # Omuz mesafesini CM cinsinden göster (QuickPose tarzı)
+                    annotated_frame = draw_shoulder_measurement(annotated_frame, keypoints)
                     
                     head_pose_data.append({
                         'person': person_idx,
@@ -344,13 +368,14 @@ def main():
                 pose_quality=pose_quality,
                 visible_keypoints=visible_keypoints,
                 total_keypoints=total_keypoints,
-                head_pose_data=head_pose_data
+                head_pose_data=head_pose_data,
+                skeletal_data=skeletal_data
             )
             annotated_frame = draw_info_overlay(annotated_frame, info_data)
             
-            # Update tracks
-            if track_ids and boxes:
-                track_manager.update_tracks(track_ids, boxes)
+            # Skeletal biometrics bilgilerini sağ üstte göster
+            if skeletal_data:
+                annotated_frame = draw_skeletal_info(annotated_frame, skeletal_data)
         else:
             annotated_frame = draw_no_person_message(annotated_frame)
         

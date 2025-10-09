@@ -5,11 +5,22 @@ People get the same ID whenever they return
 """
 
 import json
-import sqlite3
 import numpy as np
 import os
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+from typing import Optional
+from config_manager import get_config
+from log import log_with_timestamp
+
+# Get configuration
+_config = None
+
+def _get_config():
+    """Get or initialize config"""
+    global _config
+    if _config is None:
+        _config = get_config()
+    return _config
 
 
 class PersonDatabase:
@@ -17,11 +28,10 @@ class PersonDatabase:
     Persistent ReID Identity System
     
     Features:
-    - Store embeddings in JSON or SQLite
-    - Matching with cosine similarity
-    - Person deletion from database
-    - Statistics (first seen, last seen, seen count)
-    - Export/Import support
+    - Store embeddings + skeletal features in JSON
+    - Skeletal-first matching with adaptive weighting
+    - Exponential moving average for feature updates
+    - Auto-save on every change
     """
     
     def __init__(self, db_path="person_database.json", 
@@ -32,7 +42,7 @@ class PersonDatabase:
         """
         Args:
             db_path: Database file path
-            db_type: "json" or "sqlite"
+            db_type: "json" (only supported type)
             similarity_threshold: Minimum similarity for matching (0-1)
             auto_save: Auto-save on every change
             max_persons: Maximum person count (memory limit)
@@ -53,26 +63,23 @@ class PersonDatabase:
         # Load existing database
         self._load_database()
         
-        print(f"PersonDatabase ready!")
-        print(f"   - Database: {db_path}")
-        print(f"   - Type: {db_type}")
-        print(f"   - Threshold: {similarity_threshold}")
-        print(f"   - Person count: {len(self.persons)}")
+        log_with_timestamp("PersonDatabase ready!", "DATABASE")
+        log_with_timestamp(f"   - Database: {db_path}", "DATABASE")
+        log_with_timestamp(f"   - Type: {db_type}", "DATABASE")
+        log_with_timestamp(f"   - Threshold: {similarity_threshold}", "DATABASE")
+        log_with_timestamp(f"   - Person count: {len(self.persons)}", "DATABASE")
     
     def _load_database(self):
-        """Load database"""
+        """Load database from JSON"""
         if not os.path.exists(self.db_path):
-            print(f"   INFO: Creating new database: {self.db_path}")
+            log_with_timestamp(f"Creating new database: {self.db_path}", "INFO")
             return
         
         try:
-            if self.db_type == "json":
-                self._load_from_json()
-            elif self.db_type == "sqlite":
-                self._load_from_sqlite()
+            self._load_from_json()
         except Exception as e:
-            print(f"   WARNING: Database could not be loaded: {e}")
-            print(f"   INFO: Starting new database...")
+            log_with_timestamp(f"Database could not be loaded: {e}", "WARNING")
+            log_with_timestamp("Starting new database...", "INFO")
     
     def _load_from_json(self):
         """Load from JSON"""
@@ -82,60 +89,24 @@ class PersonDatabase:
         for person_id, person_data in data['persons'].items():
             self.persons[person_id] = {
                 'embedding': np.array(person_data['embedding']),
+                'skeletal_features': np.array(person_data['skeletal_features']) if 'skeletal_features' in person_data else None,
                 'first_seen': person_data['first_seen'],
                 'last_seen': person_data['last_seen'],
-                'seen_count': person_data['seen_count'],
-                'metadata': person_data.get('metadata', {})
+                'seen_count': person_data['seen_count']
             }
         
         self.total_matches = data.get('total_matches', 0)
         self.total_new_persons = data.get('total_new_persons', 0)
     
-    def _load_from_sqlite(self):
-        """Load from SQLite"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Create table if it doesn't exist
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS persons (
-                person_id TEXT PRIMARY KEY,
-                embedding BLOB NOT NULL,
-                first_seen TEXT NOT NULL,
-                last_seen TEXT NOT NULL,
-                seen_count INTEGER DEFAULT 1,
-                metadata TEXT
-            )
-        ''')
-        
-        # Load data
-        cursor.execute('SELECT * FROM persons')
-        rows = cursor.fetchall()
-        
-        for row in rows:
-            person_id, embedding_blob, first_seen, last_seen, seen_count, metadata = row
-            self.persons[person_id] = {
-                'embedding': np.frombuffer(embedding_blob, dtype=np.float32),
-                'first_seen': first_seen,
-                'last_seen': last_seen,
-                'seen_count': seen_count,
-                'metadata': json.loads(metadata) if metadata else {}
-            }
-        
-        conn.close()
-    
     def _save_database(self):
-        """Save database"""
+        """Save database to JSON"""
         if not self.auto_save:
             return
         
         try:
-            if self.db_type == "json":
-                self._save_to_json()
-            elif self.db_type == "sqlite":
-                self._save_to_sqlite()
+            self._save_to_json()
         except Exception as e:
-            print(f"   WARNING: Database could not be saved: {e}")
+            log_with_timestamp(f"Database could not be saved: {e}", "WARNING")
     
     def _save_to_json(self):
         """Save to JSON"""
@@ -149,50 +120,30 @@ class PersonDatabase:
         for person_id, person_data in self.persons.items():
             data['persons'][person_id] = {
                 'embedding': person_data['embedding'].tolist(),
+                'skeletal_features': person_data['skeletal_features'].tolist() if person_data.get('skeletal_features') is not None else None,
                 'first_seen': person_data['first_seen'],
                 'last_seen': person_data['last_seen'],
-                'seen_count': person_data['seen_count'],
-                'metadata': person_data['metadata']
+                'seen_count': person_data['seen_count']
             }
         
         with open(self.db_path, 'w') as f:
             json.dump(data, f, indent=2)
     
-    def _save_to_sqlite(self):
-        """Save to SQLite"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Clear all data and rewrite (simple approach)
-        cursor.execute('DELETE FROM persons')
-        
-        for person_id, person_data in self.persons.items():
-            cursor.execute('''
-                INSERT INTO persons (person_id, embedding, first_seen, last_seen, seen_count, metadata)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (
-                person_id,
-                person_data['embedding'].tobytes(),
-                person_data['first_seen'],
-                person_data['last_seen'],
-                person_data['seen_count'],
-                json.dumps(person_data['metadata'])
-            ))
-        
-        conn.commit()
-        conn.close()
-    
-    def find_person(self, embedding: np.ndarray, return_similarity=False) -> Optional[str]:
+    def find_person(self, embedding: np.ndarray, skeletal_features: Optional[np.ndarray] = None, 
+                    return_similarity=False) -> Optional[str]:
         """
-        Find person by embedding
+        Find person by skeletal features (primary) + embedding (secondary)
+        
+        SKELETAL-FIRST APPROACH: Prioritizes bone structure over appearance
         
         Args:
             embedding: Query embedding [2048]
+            skeletal_features: Query skeletal features [16] - PRIMARY!
             return_similarity: Also return similarity score
         
         Returns:
             person_id: Matching person ID or None
-            similarity: (optional) Similarity score
+            similarity: (optional) Combined similarity score
         """
         if not self.persons:
             return (None, 0.0) if return_similarity else None
@@ -200,19 +151,82 @@ class PersonDatabase:
         best_person_id = None
         best_similarity = -1.0
         
+        # Get config
+        config = _get_config()
+        skeletal_config = config.get_skeletal_config()
+        min_quality = skeletal_config.get('min_quality_measurements', 10)
+        
+        # ADAPTIVE WEIGHTING: Skeletal varsa primary, yoksa embedding primary
+        has_skeletal = skeletal_features is not None
+        
         # Compare with all persons
         for person_id, person_data in self.persons.items():
+            combined_similarity = 0.0
+            db_has_skeletal = person_data.get('skeletal_features') is not None
+            
+            # AĞIRLIK STRATEJİSİ - Kalite kontrolü
+            skeletal_quality_ok = False
+            
+            if has_skeletal and db_has_skeletal:
+                # Skeletal features kalitesi yeterli mi?
+                new_skel_arr = np.array(skeletal_features) if isinstance(skeletal_features, list) else skeletal_features
+                db_skel_arr = np.array(person_data['skeletal_features']) if isinstance(person_data['skeletal_features'], list) else person_data['skeletal_features']
+                
+                new_visible = np.sum(new_skel_arr > 0.001)
+                db_visible = np.sum(db_skel_arr > 0.001)
+                
+                # Her ikisinde de yeterli ölçüm varsa skeletal güvenilir
+                if new_visible >= min_quality and db_visible >= min_quality:
+                    skeletal_quality_ok = True
+            
+            if skeletal_quality_ok:
+                # Yüksek kalite skeletal → SKELETAL-FIRST
+                skeletal_weight = 0.7
+                embedding_weight = 0.3
+            elif has_skeletal and db_has_skeletal:
+                # Düşük kalite skeletal → EMBEDDING-FIRST
+                skeletal_weight = 0.2
+                embedding_weight = 0.8
+            elif has_skeletal or db_has_skeletal:
+                # Birinde var birinde yok → EMBEDDING-FIRST
+                skeletal_weight = 0.1
+                embedding_weight = 0.9
+            else:
+                # İkisinde de yok → EMBEDDING ONLY
+                skeletal_weight = 0.0
+                embedding_weight = 1.0
+            
+            # 1. SKELETAL SIMILARITY (PRIMARY when available)
+            if has_skeletal and db_has_skeletal:
+                db_skeletal = person_data['skeletal_features']
+                
+                # Skeletal distance → similarity (0 = perfect match, higher = worse)
+                # Only compare non-zero features
+                valid_mask = (skeletal_features > 0.001) & (db_skeletal > 0.001)
+                if np.any(valid_mask):
+                    diff = skeletal_features[valid_mask] - db_skeletal[valid_mask]
+                    skeletal_distance = np.sqrt(np.mean(diff ** 2))
+                    # Convert distance to similarity (inverse, normalized)
+                    skeletal_similarity = max(0.0, 1.0 - (skeletal_distance / 0.5))  # 0.5 = threshold
+                    combined_similarity += skeletal_weight * skeletal_similarity
+            
+            # 2. EMBEDDING SIMILARITY (FALLBACK when skeletal not available)
             db_embedding = person_data['embedding']
+            embedding_similarity = np.dot(embedding, db_embedding)
+            combined_similarity += embedding_weight * embedding_similarity
             
-            # Cosine similarity
-            similarity = np.dot(embedding, db_embedding)
-            
-            if similarity > best_similarity:
-                best_similarity = similarity
+            if combined_similarity > best_similarity:
+                best_similarity = combined_similarity
                 best_person_id = person_id
         
+        # ADAPTIVE THRESHOLD: Skeletal yoksa threshold düşür
+        effective_threshold = self.similarity_threshold
+        if not has_skeletal:
+            # Skeletal features yoksa threshold düşür (daha kolay tanıma)
+            effective_threshold = self.similarity_threshold * 0.8  # %20 daha düşük
+        
         # Threshold check
-        if best_similarity >= self.similarity_threshold:
+        if best_similarity >= effective_threshold:
             if return_similarity:
                 return best_person_id, best_similarity
             return best_person_id
@@ -222,21 +236,21 @@ class PersonDatabase:
         return None
     
     def add_person(self, embedding: np.ndarray, person_id: Optional[str] = None,
-                   metadata: Optional[Dict] = None) -> str:
+                   skeletal_features: Optional[np.ndarray] = None) -> str:
         """
         Add new person
         
         Args:
             embedding: Person's embedding [2048]
             person_id: Optional custom ID (auto-generated if not provided)
-            metadata: Optional metadata (name, notes, etc.)
+            skeletal_features: Optional skeletal biometrics (bone lengths/ratios)
         
         Returns:
             person_id: Assigned or created ID
         """
         # Max person check
         if len(self.persons) >= self.max_persons:
-            print(f"   WARNING: Maximum person count reached ({self.max_persons})")
+            log_with_timestamp(f"Maximum person count reached ({self.max_persons})", "WARNING")
             # Delete oldest person
             oldest_id = min(self.persons.keys(), 
                           key=lambda k: self.persons[k]['last_seen'])
@@ -253,46 +267,65 @@ class PersonDatabase:
         now = datetime.now().isoformat()
         self.persons[person_id] = {
             'embedding': embedding.copy(),
+            'skeletal_features': skeletal_features.copy() if skeletal_features is not None else None,
             'first_seen': now,
             'last_seen': now,
-            'seen_count': 1,
-            'metadata': metadata or {}
+            'seen_count': 1
         }
         
         self.total_new_persons += 1
         self._save_database()
         
-        print(f"   New person added: {person_id}")
+        log_with_timestamp(f"New person added: {person_id}", "DATABASE")
         
         return person_id
     
     def update_person(self, person_id: str, embedding: Optional[np.ndarray] = None,
-                     metadata: Optional[Dict] = None, increment_count=True):
+                     skeletal_features: Optional[np.ndarray] = None,
+                     increment_count=True):
         """
         Update existing person
         
         Args:
             person_id: Person ID to update
             embedding: New embedding (averaged with old if provided)
-            metadata: Metadata to update
+            skeletal_features: New skeletal features (averaged with old if provided)
             increment_count: Increment seen count
         """
         if person_id not in self.persons:
-            print(f"   WARNING: Person not found: {person_id}")
+            log_with_timestamp(f"Person not found: {person_id}", "WARNING")
             return
         
         person_data = self.persons[person_id]
         
+        # Get config
+        config = _get_config()
+        skeletal_config = config.get_skeletal_config()
+        
         # Update embedding (exponential moving average)
         if embedding is not None:
-            alpha = 0.9  # New embedding weight
+            alpha = skeletal_config.get('alpha_embedding', 0.9)  # New embedding weight
             person_data['embedding'] = alpha * embedding + (1 - alpha) * person_data['embedding']
             # Re-normalize
             person_data['embedding'] /= np.linalg.norm(person_data['embedding'])
         
-        # Update metadata
-        if metadata is not None:
-            person_data['metadata'].update(metadata)
+        # Update skeletal features (exponential moving average)
+        if skeletal_features is not None:
+            # person_data içinde skeletal_features var mı ve None değil mi kontrol et
+            existing_skeletal = person_data.get('skeletal_features')
+            
+            # Mevcut skeletal_features geçerli bir numpy array mi?
+            if existing_skeletal is not None and isinstance(existing_skeletal, np.ndarray) and existing_skeletal.size > 0:
+                # Güvenli ortalamalama
+                try:
+                    alpha = skeletal_config.get('alpha_skeletal', 0.7)  # Skeletal features are more stable
+                    person_data['skeletal_features'] = alpha * skeletal_features + (1 - alpha) * existing_skeletal
+                except (TypeError, ValueError):
+                    # Hata olursa yeni değeri kullan
+                    person_data['skeletal_features'] = skeletal_features.copy()
+            else:
+                # İlk kez skeletal features alınıyor veya eski değer geçersiz
+                person_data['skeletal_features'] = skeletal_features.copy()
         
         # Update statistics
         person_data['last_seen'] = datetime.now().isoformat()
@@ -318,104 +351,8 @@ class PersonDatabase:
         del self.persons[person_id]
         self._save_database()
         
-        print(f"   Person deleted: {person_id}")
+        log_with_timestamp(f"Person deleted: {person_id}", "DATABASE")
         return True
-    
-    def get_person_info(self, person_id: str) -> Optional[Dict]:
-        """Get person information"""
-        if person_id not in self.persons:
-            return None
-        
-        person_data = self.persons[person_id]
-        return {
-            'person_id': person_id,
-            'first_seen': person_data['first_seen'],
-            'last_seen': person_data['last_seen'],
-            'seen_count': person_data['seen_count'],
-            'metadata': person_data['metadata']
-        }
-    
-    def get_all_persons(self) -> List[Dict]:
-        """List all persons"""
-        return [self.get_person_info(pid) for pid in self.persons.keys()]
-    
-    def clear_database(self):
-        """Clear database"""
-        self.persons = {}
-        self.total_matches = 0
-        self.total_new_persons = 0
-        self._save_database()
-        print(f"   Database cleared")
-    
-    def export_database(self, export_path: str):
-        """Export database (in JSON format)"""
-        data = {
-            'persons': {},
-            'total_matches': self.total_matches,
-            'total_new_persons': self.total_new_persons,
-            'exported_at': datetime.now().isoformat()
-        }
-        
-        for person_id, person_data in self.persons.items():
-            data['persons'][person_id] = {
-                'embedding': person_data['embedding'].tolist(),
-                'first_seen': person_data['first_seen'],
-                'last_seen': person_data['last_seen'],
-                'seen_count': person_data['seen_count'],
-                'metadata': person_data['metadata']
-            }
-        
-        with open(export_path, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        print(f"   Database exported: {export_path}")
-    
-    def import_database(self, import_path: str, merge=True):
-        """
-        Import database
-        
-        Args:
-            import_path: JSON file to import
-            merge: True to merge with existing data, False to replace
-        """
-        with open(import_path, 'r') as f:
-            data = json.load(f)
-        
-        if not merge:
-            self.persons = {}
-        
-        for person_id, person_data in data['persons'].items():
-            if person_id not in self.persons:
-                self.persons[person_id] = {
-                    'embedding': np.array(person_data['embedding']),
-                    'first_seen': person_data['first_seen'],
-                    'last_seen': person_data['last_seen'],
-                    'seen_count': person_data['seen_count'],
-                    'metadata': person_data.get('metadata', {})
-                }
-        
-        self._save_database()
-        print(f"   Database imported: {len(data['persons'])} persons")
-    
-    def get_statistics(self) -> Dict:
-        """Get statistics"""
-        if not self.persons:
-            return {
-                'total_persons': 0,
-                'total_matches': self.total_matches,
-                'total_new_persons': self.total_new_persons
-            }
-        
-        seen_counts = [p['seen_count'] for p in self.persons.values()]
-        
-        return {
-            'total_persons': len(self.persons),
-            'total_matches': self.total_matches,
-            'total_new_persons': self.total_new_persons,
-            'avg_seen_count': np.mean(seen_counts),
-            'max_seen_count': np.max(seen_counts),
-            'min_seen_count': np.min(seen_counts)
-        }
     
     def __len__(self):
         """Number of persons in database"""

@@ -9,19 +9,28 @@ This system detects people, tracks their movements, and **remembers them forever
 **Key Capabilities:**
 - Detects 17 body keypoints per person
 - Tracks multiple people simultaneously
-- Recognizes people across sessions using appearance (ReID)
+- **Skeletal Biometrics**: Recognizes people by bone structure (independent of clothing)
+- **ReID Embeddings**: Appearance-based recognition using ResNet50
+- **Adaptive Matching**: Combines skeletal + appearance features intelligently
 - Works with webcam or RTSP cameras
 - Stores person database permanently
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Clone Repository
+
+```bash
+git clone https://github.com/anilyagizbasaran/PoseTrackAI.git
+cd PoseTrackAI
+```
+
+### 2. Install Dependencies
 
 ```bash
 pip install opencv-python ultralytics torch torchvision norfair
 ```
 
-### 2. Run Detection
+### 3. Run Detection
 
 **Webcam:**
 ```bash
@@ -34,7 +43,7 @@ python pose_ultralytics.py
 python pose_rtsp.py
 ```
 
-### 3. Keyboard Controls
+### 4. Keyboard Controls
 
 - `Q` or `ESC` - Exit
 - `P` - Pause/Resume
@@ -56,8 +65,11 @@ Main Scripts:
   pose_rtsp.py           - RTSP camera detection
 
 Core Modules:
-  tracking.py            - Tracking system (Norfair + ReID)
-  person_database.py     - Person database (persistent storage)
+  tracking/              - Modular tracking system
+    skeletal_biometrics  - Bone structure matching
+    reid_extractor       - ReID embeddings (ResNet50)
+    track_manager        - Main tracking logic
+  person_database.py     - Person database (JSON storage)
 
 Utilities:
   pose_utils.py          - Pose calculations
@@ -82,3 +94,45 @@ Configuration:
 For detailed information, features, and troubleshooting:
 - [English Documentation](DOCUMENTATION_EN.md)
 - [Turkish Documentation](DOCUMENTATION_TR.md)
+
+## Known Issues
+
+⚠️ **Person ID & Recognition Issues:**
+
+The current implementation has some challenges with person identification and tracking:
+
+- **Embedding Update Rate**: The exponential moving average (alpha=0.9) is too aggressive, causing person embeddings to drift over time and potentially lose original identity
+- **Skeletal Weight Tuning**: Adaptive weighting between skeletal biometrics and ReID needs optimization for different scenarios
+- **ID Persistence**: Person IDs may not remain stable across long sessions or when people change appearance (clothing, accessories)
+- **Threshold Sensitivity**: Similarity thresholds (both skeletal and embedding) need fine-tuning for different environments and lighting conditions
+- **Performance**: Auto-save on every update can cause slowdowns during high-frequency tracking
+- **Database Management**: Missing export/import features and statistics tools make it difficult to manage the person database
+
+**We welcome contributions to improve these issues!** See the Contributing section below.
+
+## Contributing
+
+We'd love your help improving PoseTrackAI! Here are areas where contributions would be especially valuable:
+
+### Priority Issues:
+- **Person Re-identification**: Improving the stability and accuracy of person recognition across sessions
+- **Parameter Tuning**: Finding optimal values for embedding alpha, skeletal weights, and similarity thresholds
+- **Database Tools**: Adding export/import functionality and management utilities
+- **Performance**: Implementing batch saving or periodic database updates
+- **Testing**: Creating test cases for different scenarios and edge cases
+
+### How to Contribute:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/improvement`)
+3. Make your changes and test thoroughly
+4. Commit with clear messages (`git commit -m 'Fix: Improve person ID stability'`)
+5. Push to your branch (`git push origin feature/improvement`)
+6. Open a Pull Request
+
+### Guidelines:
+- Document your changes clearly
+- Include comments in Turkish or English
+- Test with both webcam and RTSP sources
+- Update configuration files if adding new parameters
+
+**Questions or ideas?** Open an issue on [GitHub](https://github.com/anilyagizbasaran/PoseTrackAI/issues)

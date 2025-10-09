@@ -21,23 +21,25 @@ tracking:
   # Norfair Parameters
   use_norfair: true            # Use Norfair tracker
   distance_function: "keypoint"  # "keypoint" - OKS based distance
-  distance_threshold: 0.8       # Matching threshold
-  hit_counter_max: 60           # Track max age (60 frames = 2 seconds)
-  initialization_delay: 2       # False positive filter
-  pointwise_hit_counter_max: 4  # Keypoint hit counter
+  distance_threshold: 0.3       # ✅ OKLÜZYON OPTİMİZE: Üst üste gelince bile eşleşir (0.8 → 0.3)
+  hit_counter_max: 300          # ✅ OKLÜZYON OPTİMİZE: 10 saniye dayanıklı (60 → 300)
+  initialization_delay: 5       # ✅ TİTREŞİM ÖNLENDİ: 5 frame bekle, geçici tespitleri filtrele (2 → 5)
+  pointwise_hit_counter_max: 8  # ✅ KALMAN FİLTER: Keypoint'leri daha uzun hatırla (4 → 8)
   
   # ReID Parameters
   use_reid: true               # ReID active/inactive
-  reid_distance_threshold: 0.5  # ReID matching threshold (more flexible)
-  reid_hit_counter_max: 150     # Max age with ReID (150 frames = 5 seconds)
-  keypoint_weight: 0.4          # Keypoint weight (40%)
-  reid_weight: 0.6              # ReID weight (60%) - more appearance focused
+  reid_distance_threshold: 0.4  # ✅ OKLÜZYON OPTİMİZE: Daha kolay tanıma (0.5 → 0.4)
+  reid_hit_counter_max: 450     # ✅ UZUN OKLÜZYON: 15 saniye aktif (150 → 450)
+  keypoint_weight: 0.3          # ✅ AĞIRLIK DENGELENDİ: Keypoint arttırıldı (0.1 → 0.3)
+  reid_weight: 0.4              # ✅ AĞIRLIK DENGELENDİ: ReID arttırıldı (0.2 → 0.4)
+  skeletal_weight: 0.3          # ✅ AĞIRLIK DENGELENDİ: Skeletal azaltıldı, oklüzyonda değişiyor (0.7 → 0.3)
+  use_skeletal: true            # Skeletal biometrics active
   
   # Persistent Database - SAME DATABASE!
   use_persistent_reid: true     # Persistent database active
   persistent_db_path: "person_database.json"  # MAIN DATABASE - shared with webcam
   persistent_db_type: "json"    # "json" or "sqlite"
-  persistent_similarity_threshold: 0.65  # Matching threshold (very flexible - for certain person recognition)
+  persistent_similarity_threshold: 0.70  # ✅ OPTIMIZE: Aynı kişileri tanıyor, farklıları ayırt ediyor
   max_persons: 1000            # Maximum person count
   auto_save: true               # Auto save
   
@@ -53,3 +55,29 @@ ui:
 logging:
   log_to_file: true            # Write logs to file
   log_file: "logs/yolo_rtsp_detection.log"  # Special log file for RTSP
+
+# Detection Settings
+detection:
+  conf_threshold: 0.25          # Confidence threshold for detection
+  iou_threshold: 0.4            # IOU threshold for tracking
+  keypoint_confidence: 0.3      # Minimum keypoint confidence
+  min_visible_keypoints: 8      # ✅ GÜVENLIK KATMANI: Kaliteli tespit için artırıldı (5 → 8)
+  show_keypoint_numbers: true   # Show keypoint numbers on skeleton
+  
+# Pose Measurement Settings
+pose_measurement:
+  default_body_height_cm: 170   # Default body height in cm
+  average_shoulder_width_cm: 45 # Average shoulder width in cm
+  min_face_width_pixels: 20     # Minimum face width for head pose
+  yaw_scale_degrees: 30         # Yaw angle scale factor
+  pitch_scale_degrees: 45       # Pitch angle scale factor
+  
+# Skeletal Biometrics Settings
+skeletal:
+  min_quality_measurements: 6   # ✅ ESNEK: Skeletal opsiyonel, embedding yeterli (10 → 6)
+  alpha_embedding: 0.9          # Exponential moving average for embeddings
+  alpha_skeletal: 0.7           # Exponential moving average for skeletal features
+  
+# RTSP Settings
+rtsp:
+  max_consecutive_failures: 15  # Max failed frames before reconnect

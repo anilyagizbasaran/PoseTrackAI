@@ -4,6 +4,8 @@ Information overlay and visualization functions for screen display
 """
 
 import cv2
+import numpy as np
+from collections import deque
 
 
 def draw_info_overlay(frame, info_data):
@@ -102,7 +104,7 @@ def draw_no_person_message(frame):
 
 def draw_track_id_on_head(frame, head_center, track_id):
     """
-    Draw track ID above person's head
+    Draw track ID above person's head - BÜYÜK ve GÖRÜNÜLEBİLİR
     
     Args:
         frame: Frame to process
@@ -115,28 +117,153 @@ def draw_track_id_on_head(frame, head_center, track_id):
     if head_center is None or track_id is None:
         return frame
     
-    track_text = f"ID:{track_id}"
-    track_size = cv2.getTextSize(track_text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0]
-    track_x = int(head_center[0]) - track_size[0] // 2
-    track_y = int(head_center[1]) - 60
+    # ID metnini hazırla
+    track_text = f"ID: {track_id}"
     
-    # Black background
+    # BÜYÜK FONT - Daha görünür (1.5 → 1.2'den büyük)
+    font_scale = 1.5
+    font_thickness = 3
+    font = cv2.FONT_HERSHEY_DUPLEX  # Daha kalın font
+    
+    # Metin boyutunu hesapla
+    track_size = cv2.getTextSize(track_text, font, font_scale, font_thickness)[0]
+    track_x = int(head_center[0]) - track_size[0] // 2
+    track_y = int(head_center[1]) - 80  # Daha yukarıda
+    
+    # Arka plan kutucuğu - Siyah + Beyaz border
+    padding = 10
+    
+    # Beyaz border (dış çerçeve)
     cv2.rectangle(frame, 
-                (track_x - 5, track_y - track_size[1] - 5),
-                (track_x + track_size[0] + 5, track_y + 5),
+                (track_x - padding - 2, track_y - track_size[1] - padding - 2),
+                (track_x + track_size[0] + padding + 2, track_y + padding + 2),
+                (255, 255, 255), -1)
+    
+    # Siyah arka plan (iç kutu)
+    cv2.rectangle(frame, 
+                (track_x - padding, track_y - track_size[1] - padding),
+                (track_x + track_size[0] + padding, track_y + padding),
                 (0, 0, 0), -1)
     
-    # Blue YOLO track ID
+    # ID yazısı - PARLAK YEŞİL (person_XXXX) veya PARLAK MAVİ (temp_XXXX)
+    if isinstance(track_id, str) and track_id.startswith("temp_"):
+        id_color = (255, 150, 0)  # Turuncu - Geçici ID
+    elif isinstance(track_id, str) and track_id.startswith("person_"):
+        id_color = (0, 255, 0)  # Parlak yeşil - Persistent ID
+    else:
+        id_color = (0, 200, 255)  # Sarı - YOLO ID
+    
     cv2.putText(frame, track_text, 
               (track_x, track_y), 
-              cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 200, 0), 2)
+              font, font_scale, id_color, font_thickness)
+    
+    return frame
+
+
+# Global: Skeletal features'ları smooth etmek için (titremeleri azalt)
+_skeletal_smoothing = {}  # person_id: deque of skeletal_features
+
+def draw_skeletal_info(frame, skeletal_data_list):
+    """
+    Ekranda skeletal biometrics bilgilerini göster (smoothed)
+    
+    Args:
+        frame: Frame to process
+        skeletal_data_list: Liste of skeletal data [{
+            'person_id': str,
+            'skeletal_features': np.ndarray,
+            'visible_count': int
+        }]
+    
+    Returns:
+        frame: Frame with skeletal info
+    """
+    if not skeletal_data_list:
+        return frame
+    
+    global _skeletal_smoothing
+    
+    # Sağ üst köşe
+    frame_h, frame_w = frame.shape[:2]
+    start_x = frame_w - 280
+    start_y = 25
+    
+    # Arka plan (siyah, yarı saydam)
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (start_x - 10, start_y - 5), 
+                  (frame_w - 5, start_y + 100), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+    
+    # Başlık
+    cv2.putText(frame, "SKELETAL BIOMETRICS", 
+               (start_x, start_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 
+               0.5, (0, 255, 255), 1)
+    
+    current_y = start_y + 35
+    
+    # Her kişi için
+    for data in skeletal_data_list[:2]:  # Max 2 kişi göster
+        person_id = data.get('person_id', 'Unknown')
+        skeletal = data.get('skeletal_features')
+        visible = data.get('visible_count', 0)
+        
+        if skeletal is None:
+            continue
+        
+        # SMOOTHING: Son 10 frame'in ortalamasını al (titremeleri azalt)
+        if person_id not in _skeletal_smoothing:
+            _skeletal_smoothing[person_id] = deque(maxlen=10)  # Son 10 frame
+        
+        _skeletal_smoothing[person_id].append(skeletal)
+        
+        # Smoothed değerleri hesapla (son 10 frame'in ortalaması)
+        if len(_skeletal_smoothing[person_id]) > 0:
+            smoothed = np.mean(list(_skeletal_smoothing[person_id]), axis=0)
+        else:
+            smoothed = skeletal
+        
+        # Kişi ID
+        cv2.putText(frame, f"ID: {person_id}", 
+                   (start_x, current_y), cv2.FONT_HERSHEY_SIMPLEX, 
+                   0.45, (255, 200, 0), 1)
+        current_y += 18
+        
+        # Görünür ölçüm sayısı
+        cv2.putText(frame, f"Measurements: {visible}/16", 
+                   (start_x, current_y), cv2.FONT_HERSHEY_SIMPLEX, 
+                   0.4, (200, 200, 200), 1)
+        current_y += 16
+        
+        # En önemli 2 özellik göster (SMOOTHED değerler!)
+        if smoothed[0] > 0.001:  # Kalça/Omuz
+            cv2.putText(frame, f"Hip/Shoulder: {smoothed[0]:.3f}x", 
+                       (start_x, current_y), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.35, (100, 255, 100), 1)
+            current_y += 14
+        
+        if smoothed[11] > 0.001:  # Kol oranı
+            cv2.putText(frame, f"Arm Ratio: {smoothed[11]:.3f}", 
+                       (start_x, current_y), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.35, (100, 255, 100), 1)
+            current_y += 14
+        
+        # Stabilite göstergesi
+        if len(_skeletal_smoothing[person_id]) >= 5:
+            cv2.putText(frame, "[STABLE]", 
+                       (start_x, current_y), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.3, (0, 255, 0), 1)
+        else:
+            cv2.putText(frame, "[CALIBRATING...]", 
+                       (start_x, current_y), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.3, (0, 165, 255), 1)
+        current_y += 18
     
     return frame
 
 
 def create_info_data(person_count=0, track_ids=None, track_history_count=0,
                      pose_quality=0.0, visible_keypoints=0, total_keypoints=0,
-                     head_pose_data=None):
+                     head_pose_data=None, skeletal_data=None):
     """
     Create information dictionary for UI (helper function)
     
@@ -151,4 +278,5 @@ def create_info_data(person_count=0, track_ids=None, track_history_count=0,
         'visible_keypoints': visible_keypoints,
         'total_keypoints': total_keypoints,
         'head_pose_data': head_pose_data or [],
+        'skeletal_data': skeletal_data or [],
     }

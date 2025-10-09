@@ -5,13 +5,12 @@ import time
 import torch
 from log import (log_with_timestamp, log_frame_info, log_detection_results, 
                  log_system_start, log_system_stats)
-from pose_utils import calculate_head_pose, draw_head_pose, draw_pose_skeleton
-from tracking import TrackManager
-from ui import draw_info_overlay, draw_no_person_message, draw_track_id_on_head, create_info_data
+from pose_utils import calculate_head_pose, draw_head_pose, draw_pose_skeleton, draw_shoulder_measurement
+from tracking import TrackManager, extract_skeletal_features
+from ui import draw_info_overlay, draw_no_person_message, draw_track_id_on_head, create_info_data, draw_skeletal_info
 from config_manager import get_config
 
-# Global counters for tracking
-total_person_count = 0  # Total count that never decreases
+# (Removed unused global counter)
 
 def handle_keyboard_input(window_name):
     """Handle keyboard input - prevent repeated code"""
@@ -70,15 +69,17 @@ def main():
                 use_reid=tracking_config.get('use_reid', True),
                 reid_distance_threshold=tracking_config.get('reid_distance_threshold', 0.3),
                 reid_hit_counter_max=tracking_config.get('reid_hit_counter_max', 150),
-                keypoint_weight=tracking_config.get('keypoint_weight', 0.6),
-                reid_weight=tracking_config.get('reid_weight', 0.4),
+                keypoint_weight=tracking_config.get('keypoint_weight', 0.1),
+                reid_weight=tracking_config.get('reid_weight', 0.2),
+                skeletal_weight=tracking_config.get('skeletal_weight', 0.7),
+                use_skeletal=tracking_config.get('use_skeletal', True),
                 # Persistent Database
                 use_persistent_reid=tracking_config.get('use_persistent_reid', True),
                 persistent_db_path=tracking_config.get('persistent_db_path', 'person_database.json'),
                 persistent_db_type=tracking_config.get('persistent_db_type', 'json'),
                 persistent_similarity_threshold=tracking_config.get('persistent_similarity_threshold', 0.85)
             )
-            print("NORFAIR + ReID + DATABASE ACTIVE!")
+            print("NORFAIR + ReID + SKELETAL + DATABASE ACTIVE!")
         except Exception as e:
             print(f"WARNING: Failed to initialize Norfair: {e}")
             print("WARNING: Switching to YOLO ByteTrack...")
@@ -96,9 +97,17 @@ def main():
     
     # Frame skip - Get from config
     performance_config = config.get_performance_config()
+    detection_config = config.get_detection_config()
+    
     TRACK_EVERY_N_FRAMES = performance_config.get('track_every_n_frames', 1)
     DISPLAY_EVERY_N_FRAMES = 2  # Visualization every 2 frames (for performance)
     last_annotated_frame = None  # Store last processed frame
+    
+    # Get detection parameters from config
+    conf_threshold = detection_config.get('conf_threshold', 0.25)
+    iou_threshold = detection_config.get('iou_threshold', 0.4)
+    keypoint_confidence = detection_config.get('keypoint_confidence', 0.3)
+    show_numbers = detection_config.get('show_keypoint_numbers', True)
     
     # Video source - Get from config
     camera_config = config.get_camera_config()
@@ -179,7 +188,7 @@ def main():
                 frame, 
                 save=False, 
                 show=False, 
-                conf=0.25,
+                conf=conf_threshold,
                 verbose=False, 
                 device=device, 
                 half=False
@@ -191,8 +200,8 @@ def main():
                 persist=True,
                 save=False, 
                 show=False, 
-                conf=0.25,
-                iou=0.4,
+                conf=conf_threshold,
+                iou=iou_threshold,
                 verbose=False, 
                 device=device, 
                 half=False,
@@ -230,10 +239,6 @@ def main():
                 track_ids, finished_tracks = track_manager.update_tracks_with_norfair(
                     pose_keypoints, boxes, frame=frame
                 )
-            elif not USE_NORFAIR:
-                # YOLO tracking
-                from tracking import extract_boxes_from_results
-                track_ids, boxes = extract_boxes_from_results(pose_results)
             else:
                 # Norfair active but no detection
                 track_ids = []
@@ -245,7 +250,9 @@ def main():
         if pose_keypoints is not None and len(pose_keypoints) > 0:
             # Draw pose skeleton lines with numbers (only on display frames)
             if should_display:
-                annotated_frame = draw_pose_skeleton(annotated_frame, pose_keypoints, confidence_threshold=0.3, show_numbers=True)
+                annotated_frame = draw_pose_skeleton(annotated_frame, pose_keypoints, 
+                                                    confidence_threshold=keypoint_confidence, 
+                                                    show_numbers=show_numbers)
             
             # Keypoint analysis
             person_count = len(pose_keypoints)
@@ -254,6 +261,7 @@ def main():
             total_keypoints = 0
             visible_keypoints = 0
             head_pose_data = []
+            skeletal_data = []  # Skeletal biometrics data
             
             # Log track IDs (Norfair or YOLO)
             if track_ids and frame_count % 30 == 0:  # Every 30 frames
@@ -262,6 +270,16 @@ def main():
             for person_idx, keypoints in enumerate(pose_keypoints):
                 # Use track ID (Norfair or YOLO)
                 track_id = track_ids[person_idx] if person_idx < len(track_ids) else None
+                
+                # Skeletal features'ı hesapla
+                skeletal_features = extract_skeletal_features(keypoints)
+                if skeletal_features is not None:
+                    visible_skeletal = int(np.sum(skeletal_features > 0.001))
+                    skeletal_data.append({
+                        'person_id': track_id if track_id else f"#{person_idx}",
+                        'skeletal_features': skeletal_features,
+                        'visible_count': visible_skeletal
+                    })
                 
                 # Calculate head pose for each person
                 result = calculate_head_pose(keypoints)
@@ -275,6 +293,9 @@ def main():
                         
                         # Show YOLO Track ID above head
                         annotated_frame = draw_track_id_on_head(annotated_frame, head_center, track_id)
+                        
+                        # Omuz mesafesini CM cinsinden göster (QuickPose tarzı)
+                        annotated_frame = draw_shoulder_measurement(annotated_frame, keypoints)
                     
                     # Store head pose data with track ID
                     head_pose_data.append({
@@ -291,12 +312,6 @@ def main():
                     if conf > 0.3:  # Visible point threshold
                         visible_keypoints += 1
 
-
-            # Update total person count (never decreases)
-            global total_person_count
-            if person_count > total_person_count:
-                total_person_count = person_count
-            
             # Pose quality analysis
             pose_quality = (visible_keypoints / total_keypoints) * 100 if total_keypoints > 0 else 0
             
@@ -313,14 +328,14 @@ def main():
                     pose_quality=pose_quality,
                     visible_keypoints=visible_keypoints,
                     total_keypoints=total_keypoints,
-                    head_pose_data=head_pose_data
+                    head_pose_data=head_pose_data,
+                    skeletal_data=skeletal_data
                 )
                 annotated_frame = draw_info_overlay(annotated_frame, info_data)
-            
-            # ===== TRACK HISTORY and LINES =====
-            # Update tracks (for YOLO tracking - Norfair already updated)
-            if not USE_NORFAIR and track_ids and boxes:
-                finished_tracks = track_manager.update_tracks(track_ids, boxes)
+                
+                # Skeletal biometrics bilgilerini sağ üstte göster
+                if skeletal_data:
+                    annotated_frame = draw_skeletal_info(annotated_frame, skeletal_data)
             
             # Optional: Draw tracking lines
             # if track_ids:

@@ -10,8 +10,13 @@ Kalıcı kişi tanıma özellikli gelişmiş pose tespiti ve takip sistemi.
 opencv_yolo/
 ├── pose_ultralytics.py      # Ana webcam tespit scripti
 ├── pose_rtsp.py             # RTSP kamera tespit scripti
-├── tracking.py              # Norfair + ReID ile gelişmiş takip
-├── person_database.py       # Kalıcı kişi veritabanı (JSON/SQLite)
+├── tracking/                # Modüler takip sistemi
+│   ├── __init__.py          # Modül export'ları
+│   ├── skeletal_biometrics.py  # Kemik yapısı eşleştirme
+│   ├── reid_extractor.py    # ReID embeddings (ResNet50)
+│   └── track_manager.py     # Ana takip mantığı
+├── tracking.py              # Geriye uyumluluk wrapper'ı
+├── person_database.py       # Kalıcı kişi veritabanı (JSON)
 ├── pose_utils.py            # Pose hesaplama ve çizim araçları
 ├── ui.py                    # UI overlay ve görselleştirme
 ├── log.py                   # Loglama sistemi
@@ -31,8 +36,12 @@ opencv_yolo/
 - **pose_rtsp.py** - RTSP kamera pose tespiti ve takip
 
 ### Temel Modüller
-- **tracking.py** - Norfair, ReID ve kalıcı veritabanı ile takip yönetimi
-- **person_database.py** - Kişi embedding'lerini kalıcı olarak saklar
+- **tracking/** - Modüler takip sistemi
+  - **skeletal_biometrics.py** - Kemik uzunluğu/oran çıkarımı (kıyafetten bağımsız)
+  - **reid_extractor.py** - ResNet50 ile görünüm tabanlı embedding
+  - **track_manager.py** - Norfair + ReID + Kalıcı veritabanı yönetimi
+- **tracking.py** - Geriye uyumluluk için wrapper (eski import'lar çalışır)
+- **person_database.py** - Kişi embedding'lerini JSON'da kalıcı olarak saklar
 - **pose_utils.py** - Pose keypoint hesaplamaları ve iskelet çizimi
 - **ui.py** - Ekran üstü bilgi gösterimi
 
@@ -190,6 +199,45 @@ camera:
 3. **Veritabanı Yedekle**: `person_database.json` düzenli yedekle
 4. **Config Testleri**: Kullanım durumuna göre farklı parametreler dene
 5. **GPU Kullan**: Mümkünse her zaman GPU kullan (`device: "cuda"`)
+
+---
+
+## Gelişmiş Özellikler
+
+### Kalıcı ID Sistemi
+- Aynı kişi programı kapatıp açsanız bile aynı ID'yi alır
+- Birden fazla oturum ve günler boyunca çalışır
+- Threshold: `0.70` (optimal - aynı kişileri tanır, farklıları ayırt eder)
+
+### Oklüzyon Desteği
+- Kişiler üst üste gelse bile takip eder
+- 10 saniyelik tracking dayanıklılığı (`hit_counter_max: 300`)
+- 15 saniyelik ReID aktif (`reid_hit_counter_max: 450`)
+- Yakın mesafe takibi desteklenir
+
+### Skeletal Biometrics (Kemik Yapısı)
+- Tanımlama için kemik yapısı kullanılır (kıyafetten bağımsız)
+- Oklüzyonlarda görünümden daha stabil
+- Kaliteli tespit için minimum 8 keypoint gerekli
+- Yüksek kaliteli skeletal matching için minimum 10 ölçüm
+
+---
+
+## Sorun Giderme
+
+**Kapatıp açınca ID'ler değişiyor:**
+- Threshold düşür: `persistent_similarity_threshold: 0.65`
+
+**ID'ler titreşiyor/kararsız:**
+- Zaten optimize edildi: `initialization_delay: 5`
+
+**Yanlış eşleşme (farklı kişiler aynı ID):**
+- Threshold arttır: `persistent_similarity_threshold: 0.75`
+- Kalite arttır: `min_visible_keypoints: 10`
+
+**Uzaktaki kişiler tespit edilmiyor:**
+- Detection threshold düşür: `conf_threshold: 0.15`
+- Keypoint azalt: `min_visible_keypoints: 5`
 
 ---
 
