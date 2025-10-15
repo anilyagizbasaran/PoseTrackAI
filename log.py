@@ -34,7 +34,7 @@ def log_detection_results(person_count, pose_quality, head_poses):
                               f"Pitch={pose['pitch']:.1f}°, Roll={pose['roll']:.1f}°", "POSE")
 
 
-def log_system_start(device, gpu_name=None):
+def log_system_start(device, gpu_name=None, use_norfair=True):
     """System startup logs"""
     log_with_timestamp("Starting Pose detection with TRACKING...", "START")
     log_with_timestamp("Webcam detection active - 60 FPS target!", "SYSTEM")
@@ -43,12 +43,21 @@ def log_system_start(device, gpu_name=None):
     if gpu_name:
         log_with_timestamp(f"   GPU: {gpu_name}", "SYSTEM")
     log_with_timestamp("", "SYSTEM")
-    log_with_timestamp("  YOLO TRACKING SYSTEM ACTIVE!", "SYSTEM")
-    log_with_timestamp("- model.track() is being used (persist=True)", "SYSTEM")
-    log_with_timestamp("- stream=False - frame by frame tracking", "SYSTEM")
-    log_with_timestamp("- Track history: Last 30 frames (1 second)", "SYSTEM")
-    log_with_timestamp("- Finished tracks are automatically detected", "SYSTEM")
-    log_with_timestamp("- ONLY YOLO Track ID is used", "SYSTEM")
+    
+    if use_norfair:
+        log_with_timestamp("  NORFAIR TRACKING SYSTEM ACTIVE!", "SYSTEM")
+        log_with_timestamp("- Norfair + ReID + Database tracking", "SYSTEM")
+        log_with_timestamp("- Kalman filter + motion prediction", "SYSTEM")
+        log_with_timestamp("- Persistent person recognition", "SYSTEM")
+        log_with_timestamp("- Skeletal biometrics matching", "SYSTEM")
+    else:
+        log_with_timestamp("  YOLO TRACKING SYSTEM ACTIVE!", "SYSTEM")
+        log_with_timestamp("- model.track() is being used (persist=True)", "SYSTEM")
+        log_with_timestamp("- stream=False - frame by frame tracking", "SYSTEM")
+        log_with_timestamp("- Track history: Last 30 frames (1 second)", "SYSTEM")
+        log_with_timestamp("- Finished tracks are automatically detected", "SYSTEM")
+        log_with_timestamp("- ONLY YOLO Track ID is used", "SYSTEM")
+    
     log_with_timestamp("", "SYSTEM")
 
 
@@ -69,7 +78,7 @@ def log_track_exit(track_id, duration_seconds):
     log_with_timestamp(f"ID:{track_id} - EXITED (left the screen) | Total Duration: {duration_str}", "EXIT")
 
 
-def log_system_stats(frame_count, total_runtime, track_history, w, h, device, track_durations):
+def log_system_stats(frame_count, total_runtime, track_history, w, h, device, track_durations, use_norfair=True):
     """System shutdown statistics"""
     log_with_timestamp("System shutting down...", "CLEANUP")
     
@@ -98,8 +107,14 @@ def log_system_stats(frame_count, total_runtime, track_history, w, h, device, tr
     log_with_timestamp("", "STATS")
     log_with_timestamp(f"Output file: 'yolo11_object_pose_output.avi'", "STATS")
     log_with_timestamp(f"Resolution: {w}x{h}", "STATS")
-    log_with_timestamp("System: YOLO11 Pose + YOLO Track", "STATS")
+    
+    if use_norfair:
+        log_with_timestamp("System: YOLO11 Pose + Norfair Track", "STATS")
+        log_with_timestamp("Tracking: Norfair + ReID + Database", "STATS")
+    else:
+        log_with_timestamp("System: YOLO11 Pose + YOLO Track", "STATS")
+        log_with_timestamp("Tracking: model.track(persist=True, stream=False)", "STATS")
+    
     log_with_timestamp(f"Device: {device.upper()}", "STATS")
-    log_with_timestamp("Tracking: model.track(persist=True, stream=False)", "STATS")
     log_with_timestamp("Camera Source: Laptop Webcam (60 FPS)", "STATS")
     log_with_timestamp("Pose detection + Tracking completed!", "COMPLETE")

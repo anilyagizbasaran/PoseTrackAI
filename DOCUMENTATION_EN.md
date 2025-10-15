@@ -7,9 +7,10 @@ Advanced pose detection and tracking system with persistent person recognition.
 ## Project Structure
 
 ```
-opencv_yolo/
-├── pose_ultralytics.py      # Main webcam detection script
-├── pose_rtsp.py             # RTSP camera detection script
+PoseTrackAI/
+├── pose_ultralytics.py      # Main webcam detection script 
+├── pose_rtsp.py             # RTSP camera detection script 
+├── pose_base.py             # Common code base 
 ├── tracking/                # Modular tracking system
 │   ├── __init__.py          # Module exports
 │   ├── skeletal_biometrics.py  # Bone structure matching
@@ -25,15 +26,20 @@ opencv_yolo/
 ├── config_webcam.yaml       # Webcam configuration file
 ├── config_rtsp.yaml         # RTSP camera configuration
 └── person_database.json     # Person database (auto-created)
-```
-
 ---
-
 ## What Each File Does
 
 ### Main Scripts
-- **pose_ultralytics.py** - Webcam pose detection with tracking
+- **pose_ultralytics.py** - Webcam pose detection with tracking 
 - **pose_rtsp.py** - RTSP camera pose detection with tracking
+
+### Base System
+- **pose_base.py** - Common code base
+  - `PoseDetectorBase` class
+  - Common pose detection logic
+  - Common tracking setup
+  - Common UI and visualization
+  - Common cleanup operations
 
 ### Core Modules
 - **tracking/** - Modular tracking system
@@ -87,7 +93,7 @@ python pose_rtsp.py
 
 ## Configuration
 
-All settings are in **config_webcam.yaml** - edit this file to change behavior.
+All settings are in **config_webcam.yaml** and **config_rtsp.yaml** - edit these files to change behavior.
 
 ### Key Settings
 
@@ -112,7 +118,7 @@ performance:
   track_every_n_frames: 1  # Process every N frames (higher=faster, less accurate)
 ```
 
-See **config_webcam.yaml** for all available parameters with detailed comments.
+See **config_webcam.yaml** and **config_rtsp.yaml** for all available parameters with detailed comments.
 
 ---
 

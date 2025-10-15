@@ -2,14 +2,16 @@
 
 Kalıcı kişi tanıma özellikli gelişmiş pose tespiti ve takip sistemi.
 
+
 ---
 
 ## Proje Yapısı
 
 ```
-opencv_yolo/
+PoseTrackAI/
 ├── pose_ultralytics.py      # Ana webcam tespit scripti
 ├── pose_rtsp.py             # RTSP kamera tespit scripti
+├── pose_base.py             # Ortak kod tabanı 
 ├── tracking/                # Modüler takip sistemi
 │   ├── __init__.py          # Modül export'ları
 │   ├── skeletal_biometrics.py  # Kemik yapısı eşleştirme
@@ -25,15 +27,21 @@ opencv_yolo/
 ├── config_webcam.yaml       # Webcam konfigürasyon dosyası
 ├── config_rtsp.yaml         # RTSP kamera konfigürasyonu
 └── person_database.json     # Kişi veritabanı (otomatik oluşur)
-```
-
 ---
 
 ## Her Dosyanın Görevi
 
 ### Ana Scriptler
-- **pose_ultralytics.py** - Webcam pose tespiti ve takip
-- **pose_rtsp.py** - RTSP kamera pose tespiti ve takip
+- **pose_ultralytics.py** - Webcam pose tespiti ve takip 
+- **pose_rtsp.py** - RTSP kamera pose tespiti ve takip 
+
+### Temel Sistem
+- **pose_base.py** - Ortak kod tabanı 
+  - `PoseDetectorBase` sınıfı
+  - Ortak pose detection mantığı
+  - Ortak tracking kurulumu
+  - Ortak UI ve görselleştirme
+  - Ortak cleanup işlemleri
 
 ### Temel Modüller
 - **tracking/** - Modüler takip sistemi
@@ -71,7 +79,7 @@ pip install opencv-python ultralytics torch torchvision norfair
 python pose_ultralytics.py
 ```
 
-### RTSP Tespiti Çalıştır
+### RTSP Tespiti Çalıştır(güvenlik kamerası vs)
 ```bash
 # config_rtsp.yaml dosyasına RTSP URL'ini gir
 python pose_rtsp.py
@@ -87,7 +95,7 @@ python pose_rtsp.py
 
 ## Konfigürasyon
 
-Tüm ayarlar **config_webcam.yaml** dosyasında - davranışı değiştirmek için bu dosyayı düzenle.
+Tüm ayarlar **config_webcam.yaml** ve  **config_rtsp.yaml** dosyasında - genel ayarları değiştirmek için bu dosyayı düzenle.
 
 ### Önemli Ayarlar
 
@@ -112,7 +120,7 @@ performance:
   track_every_n_frames: 1  # Her N frame'i işle (yüksek=hızlı, az doğru)
 ```
 
-Tüm parametreler için detaylı açıklamalarla **config_webcam.yaml** dosyasına bakın.
+Tüm parametreler için detaylı açıklamalarla **config_webcam.yaml** ve  **config_rtsp.yaml** dosyalarına bakın.
 
 ---
 

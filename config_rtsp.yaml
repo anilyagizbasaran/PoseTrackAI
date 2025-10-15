@@ -6,7 +6,7 @@ camera:
   # RTSP URL format: "rtsp://username:password@ip:port/stream"
   source: "rtsp://username:password@ip:port/stream"  # Change this to your camera URL
   resolution: [1280, 720]       # Higher resolution for RTSP
-  buffer_size: 10              # Buyuk buffer - frame kaybini onler, akicilik icin
+  buffer_size: 10              # Large buffer - prevents frame loss, for smoothness
   
 # YOLO Model Settings
 yolo:
@@ -21,31 +21,31 @@ tracking:
   # Norfair Parameters
   use_norfair: true            # Use Norfair tracker
   distance_function: "keypoint"  # "keypoint" - OKS based distance
-  distance_threshold: 0.3       # ✅ OKLÜZYON OPTİMİZE: Üst üste gelince bile eşleşir (0.8 → 0.3)
-  hit_counter_max: 300          # ✅ OKLÜZYON OPTİMİZE: 10 saniye dayanıklı (60 → 300)
-  initialization_delay: 5       # ✅ TİTREŞİM ÖNLENDİ: 5 frame bekle, geçici tespitleri filtrele (2 → 5)
-  pointwise_hit_counter_max: 8  # ✅ KALMAN FİLTER: Keypoint'leri daha uzun hatırla (4 → 8)
+  distance_threshold: 0.3       # OCCLUSION OPTIMIZED: Matches even when overlapping (0.8 → 0.3)
+  hit_counter_max: 300          # OCCLUSION OPTIMIZED: 10 seconds resilient (60 → 300)
+  initialization_delay: 5       # ANTI-FLICKER: Wait 5 frames, filter temporary detections (2 → 5)
+  pointwise_hit_counter_max: 8  # KALMAN FILTER: Remember keypoints longer (4 → 8)
   
   # ReID Parameters
   use_reid: true               # ReID active/inactive
-  reid_distance_threshold: 0.4  # ✅ OKLÜZYON OPTİMİZE: Daha kolay tanıma (0.5 → 0.4)
-  reid_hit_counter_max: 450     # ✅ UZUN OKLÜZYON: 15 saniye aktif (150 → 450)
-  keypoint_weight: 0.3          # ✅ AĞIRLIK DENGELENDİ: Keypoint arttırıldı (0.1 → 0.3)
-  reid_weight: 0.4              # ✅ AĞIRLIK DENGELENDİ: ReID arttırıldı (0.2 → 0.4)
-  skeletal_weight: 0.3          # ✅ AĞIRLIK DENGELENDİ: Skeletal azaltıldı, oklüzyonda değişiyor (0.7 → 0.3)
+  reid_distance_threshold: 0.4  # OCCLUSION OPTIMIZED: Easier recognition (0.5 → 0.4)
+  reid_hit_counter_max: 450     # LONG OCCLUSION: 15 seconds active (150 → 450)
+  keypoint_weight: 0.3          # WEIGHT BALANCED: Keypoint increased (0.1 → 0.3)
+  reid_weight: 0.4              # WEIGHT BALANCED: ReID increased (0.2 → 0.4)
+  skeletal_weight: 0.3          # WEIGHT BALANCED: Skeletal reduced, changes in occlusion (0.7 → 0.3)
   use_skeletal: true            # Skeletal biometrics active
   
   # Persistent Database - SAME DATABASE!
   use_persistent_reid: true     # Persistent database active
   persistent_db_path: "person_database.json"  # MAIN DATABASE - shared with webcam
   persistent_db_type: "json"    # "json" or "sqlite"
-  persistent_similarity_threshold: 0.70  # ✅ OPTIMIZE: Aynı kişileri tanıyor, farklıları ayırt ediyor
+  persistent_similarity_threshold: 0.70  # OPTIMIZED: Recognizes same people, distinguishes different ones
   max_persons: 1000            # Maximum person count
   auto_save: true               # Auto save
   
 # Performance Settings
 performance:
-  track_every_n_frames: 1       # Her frame'i isle - maksimum akicilik (gecikme onemli degil)
+  track_every_n_frames: 1       # Process every frame - maximum smoothness (delay not important)
   
 # UI Settings
 ui:
@@ -61,7 +61,7 @@ detection:
   conf_threshold: 0.25          # Confidence threshold for detection
   iou_threshold: 0.4            # IOU threshold for tracking
   keypoint_confidence: 0.3      # Minimum keypoint confidence
-  min_visible_keypoints: 8      # ✅ GÜVENLIK KATMANI: Kaliteli tespit için artırıldı (5 → 8)
+  min_visible_keypoints: 5      # SECURITY LAYER: For quality detection increased (5 → 8)
   show_keypoint_numbers: true   # Show keypoint numbers on skeleton
   
 # Pose Measurement Settings
@@ -74,7 +74,7 @@ pose_measurement:
   
 # Skeletal Biometrics Settings
 skeletal:
-  min_quality_measurements: 6   # ✅ ESNEK: Skeletal opsiyonel, embedding yeterli (10 → 6)
+  min_quality_measurements: 6   # FLEXIBLE: Skeletal optional, embedding sufficient (10 → 6)
   alpha_embedding: 0.9          # Exponential moving average for embeddings
   alpha_skeletal: 0.7           # Exponential moving average for skeletal features
   

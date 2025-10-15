@@ -187,12 +187,12 @@ def draw_pose_skeleton(frame, keypoints, confidence_threshold=None, show_numbers
 
 def draw_shoulder_measurement(frame, keypoints, body_height_cm=None):
     """
-    Omuzlar arası mesafeyi CM cinsinden göster ve GERÇEK ÖLÇÜM yap (QuickPose tarzı)
+    Show shoulder distance in CM and perform REAL MEASUREMENT (QuickPose style)
     
     Args:
         frame: Frame to draw on
         keypoints: [17, 3] array (x, y, confidence)
-        body_height_cm: Kullanıcının boy uzunluğu (opsiyonel, yoksa config'den alınır)
+        body_height_cm: User's body height (optional, taken from config if not provided)
     
     Returns:
         frame: Frame with shoulder measurement drawn
@@ -206,87 +206,87 @@ def draw_shoulder_measurement(frame, keypoints, body_height_cm=None):
     L_HIP, R_HIP = 11, 12
     L_ANKLE, R_ANKLE = 15, 16
     
-    # Omuz keypoint'leri
+    # Shoulder keypoints
     left_shoulder = keypoints[L_SHOULDER]
     right_shoulder = keypoints[R_SHOULDER]
     
-    # Her iki omuz da görünür mü?
+    # Are both shoulders visible?
     confidence_threshold = detection_config.get('keypoint_confidence', 0.3)
     if left_shoulder[2] < confidence_threshold or right_shoulder[2] < confidence_threshold:
-        return frame  # Omuzlar görünmüyor
+        return frame  # Shoulders not visible
     
-    # Omuzlar arası pixel mesafesi
+    # Shoulder distance in pixels
     shoulder_dist_px = np.sqrt(
         (left_shoulder[0] - right_shoulder[0])**2 + 
         (left_shoulder[1] - right_shoulder[1])**2
     )
     
-    # === GERÇEK ÖLÇÜM: Vücut yüksekliğinden scale factor hesapla ===
+    # === REAL MEASUREMENT: Calculate scale factor from body height ===
     
-    # Vücut yüksekliğini pixel cinsinden hesapla (omuz-ayak arası)
+    # Calculate body height in pixels (shoulder-ankle distance)
     body_height_px = None
     
-    # Her iki taraf da görünürse ortalamasını al (en doğrusu)
+    # If both sides are visible, take average (most accurate)
     if (left_shoulder[2] > confidence_threshold and keypoints[L_ANKLE][2] > confidence_threshold and 
         right_shoulder[2] > confidence_threshold and keypoints[R_ANKLE][2] > confidence_threshold):
         left_height = abs(left_shoulder[1] - keypoints[L_ANKLE][1])
         right_height = abs(right_shoulder[1] - keypoints[R_ANKLE][1])
         body_height_px = (left_height + right_height) / 2
-    # Sadece sol taraf görünürse
+    # If only left side is visible
     elif left_shoulder[2] > confidence_threshold and keypoints[L_ANKLE][2] > confidence_threshold:
         body_height_px = abs(left_shoulder[1] - keypoints[L_ANKLE][1])
-    # Sadece sağ taraf görünürse
+    # If only right side is visible
     elif right_shoulder[2] > confidence_threshold and keypoints[R_ANKLE][2] > confidence_threshold:
         body_height_px = abs(right_shoulder[1] - keypoints[R_ANKLE][1])
     
     # Scale factor hesapla
-    measurement_accurate = False  # Ölçüm ne kadar doğru?
+    measurement_accurate = False  # How accurate is the measurement?
     
-    if body_height_px is not None and body_height_px > 10:  # Tam vücut görünür
-        # Kullanıcı boyu (yoksa config'den al)
+    if body_height_px is not None and body_height_px > 10:  # Full body visible
+        # User height (take from config if not provided)
         if body_height_cm is None:
             body_height_cm = pose_config.get('default_body_height_cm', 170)
         
-        # Pixel to CM dönüşüm faktörü
+        # Pixel to CM conversion factor
         scale_factor = body_height_cm / body_height_px
         
-        # GERÇEK omuz mesafesi
+        # REAL shoulder distance
         shoulder_dist_cm = shoulder_dist_px * scale_factor
         measurement_accurate = True
         
-        # DEBUG: İlk hesaplamada yazdır (her 30 frame'de bir)
-        # print(f"[MEASURE] ✅ GERÇEK ÖLÇÜM: Body: {body_height_px:.0f}px, Scale: {scale_factor:.3f}, Shoulder: {shoulder_dist_cm:.1f}cm")
+        # DEBUG: Print on first calculation (every 30 frames)
+        # print(f"[MEASURE] REAL MEASUREMENT: Body: {body_height_px:.0f}px, Scale: {scale_factor:.3f}, Shoulder: {shoulder_dist_cm:.1f}cm")
     else:
-        # AYAKLAR GÖRÜNMÜYOR AMA TAHMİNİ ÖLÇÜM YAP
-        # Varsayılan vücut yüksekliği kullanarak yaklaşık hesapla
+        # FEET NOT VISIBLE BUT MAKE ESTIMATED MEASUREMENT
+        # Calculate approximately using default body height
         
         # TAHMİNİ scale factor (ortalama mesafe: 2m, ortalama boy: 170cm)
-        # Tipik omuz pixel değeri: 80-120 px (üst vücut için)
+        # Typical shoulder pixel value: 80-120 px (for upper body)
         estimated_scale = 170 / 350  # Ortalama: 170cm / 350px = 0.486 cm/px
         
         shoulder_dist_cm = shoulder_dist_px * estimated_scale
         measurement_accurate = False
         
-        # DEBUG: Neden tahmini kullanıldığını göster (sadece bir kez)
-        # print(f"[MEASURE] ⚠️ TAHMİNİ ÖLÇÜM: Ayaklar görünmüyor, tahmini: {shoulder_dist_cm:.1f}cm (~±5cm hata payı)")
+        # DEBUG: Show why estimation was used (only once)
+        # print(f"[MEASURE] ESTIMATED MEASUREMENT: Feet not visible, estimated: {shoulder_dist_cm:.1f}cm (~±5cm error margin)")
     
-    # Çizgi çiz (omuzlar arası)
+    # Draw line (between shoulders)
     p1 = (int(left_shoulder[0]), int(left_shoulder[1]))
     p2 = (int(right_shoulder[0]), int(right_shoulder[1]))
     
-    # Omuz çizgisi (kalın, parlak)
-    cv2.line(frame, p1, p2, (0, 255, 255), 4)  # Sarı çizgi
+    # Shoulder line (thick, bright)
+    cv2.line(frame, p1, p2, (0, 255, 255), 4)  # Yellow line
     
-    # Çizginin orta noktası
+    # Midpoint of the line
     mid_x = int((p1[0] + p2[0]) / 2)
     mid_y = int((p1[1] + p2[1]) / 2)
     
     # Mesafe metni (accurate mi yoksa tahmini mi?)
     if measurement_accurate:
-        text = f"{shoulder_dist_cm:.1f} cm"  # Gerçek ölçüm ✅
+        text = f"{shoulder_dist_cm:.1f} cm"  # Real measurement
         debug_text = f"(H:{body_height_px:.0f}px)"
     else:
-        text = f"~{shoulder_dist_cm:.1f} cm"  # Tahmini ölçüm (~)
+        text = f"~{shoulder_dist_cm:.1f} cm"  # Estimated measurement (~)
         debug_text = "(estimate)"
     
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -296,28 +296,28 @@ def draw_shoulder_measurement(frame, keypoints, body_height_cm=None):
     # Metin boyutunu al
     (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
     
-    # Metin arkaplanı (siyah kutu)
+    # Text background (black box)
     bg_x1 = mid_x - text_width // 2 - 8
     bg_y1 = mid_y - text_height - 15
     bg_x2 = mid_x + text_width // 2 + 8
     bg_y2 = mid_y - 5
     
-    # Arka plan çiz
+    # Draw background
     cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), (0, 0, 0), -1)
     cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), (0, 255, 255), 2)
     
-    # Metin çiz (çizginin üstünde)
+    # Draw text (above the line)
     text_x = mid_x - text_width // 2
     text_y = mid_y - 10
     cv2.putText(frame, text, (text_x, text_y), font, font_scale, (0, 255, 255), thickness)
     
-    # Debug text (altında, küçük)
+    # Debug text (below, small)
     debug_size = cv2.getTextSize(debug_text, font, 0.4, 1)[0]
     debug_x = mid_x - debug_size[0] // 2
     debug_y = mid_y + 15
     cv2.putText(frame, debug_text, (debug_x, debug_y), font, 0.4, (150, 150, 150), 1)
     
-    # Uç noktalarda daireler
+    # Circles at endpoints
     cv2.circle(frame, p1, 6, (0, 255, 255), -1)
     cv2.circle(frame, p2, 6, (0, 255, 255), -1)
     
